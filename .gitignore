@@ -1,0 +1,9 @@
+@'
+CodeQuest.exe
+*.o
+*.obj
+*.dll
+*.a
+.vscode/
+.idea/
+'@ | Set-Content .gitignore
