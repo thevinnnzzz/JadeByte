@@ -1,29 +1,35 @@
-# Code Quest
+# JadeByte
 
-**Code Quest** is a 2D programming quiz game built with C++ and the [raylib](https://github.com/raysan5/raylib) game library. It challenges players to test their programming knowledge with 8 multiple-choice questions, a countdown timer, instant feedback, and scoring.
+**JadeByte** is a 2D programming quiz game built with C++ and the [raylib](https://github.com/raysan5/raylib) game library. It challenges players to test their programming knowledge with multiple-choice questions, a configurable countdown timer, shuffling, instant feedback, and scoring.
+
+**Want to play right now?** Grab `JadeByte.exe` from the [Releases](https://github.com/thevinnnzzz/JadeByte/releases) page, put it in its own folder, and double-click it — there is nothing to install. See [Installation](#installation).
 
 ## About
 
-Code Quest takes players through a fast-paced quiz of programming fundamentals. The game was developed with raylib, featuring a custom menu screen, quiz flow, results screen, procedurally generated sound effects, and background music.
+JadeByte takes players through a fast-paced quiz of programming fundamentals. The game was developed with raylib, featuring a custom menu screen, quiz flow, results screen, procedurally generated sound effects, and background music.
 
-- **8 multiple-choice questions** covering programming fundamentals (C++ syntax, data types, loops, operators, functions, containers, arrays, etc.)
-- **15-second timer** per question, with a countdown display and warning tick sound in the final 5 seconds
+- **58 multiple-choice questions** covering programming fundamentals (C++ syntax, data types, loops, operators, functions, containers, arrays, complexity, plus web, SQL, git and computer basics)
+- **Custom quiz length** — pick how many questions to answer, from 5 up to all 58
+- **Custom timer** — pick how many seconds you get per question, from 5 to 60, with a countdown display and warning tick sound in the final seconds
+- **Shuffle option** — turn it on for a different question order every run, or off to always play the questions in order
+- **Custom font style** — switch the font used by the whole game: raylib's default, common Windows fonts, or any `.ttf` / `.otf` file you drop into the `fonts` folder
 - **Instant feedback** after each answer — correct / incorrect, plus the correct answer
 - **Scoring** — 10 points per correct answer, final accuracy and rank
 
 ## How to Play
 
 1. Start the game.
-2. On the main menu, select **START QUIZ**.
-3. Answer each multiple-choice question before the timer runs out.
-4. Read the instant feedback after each answer (correct / incorrect, plus the correct answer).
-5. After the final question, view the **QUIZ COMPLETE** results screen.
-6. Choose **PLAY AGAIN** to restart or **QUIT** to exit.
+2. On the main menu, set how many **questions** you want, the **seconds per question**, whether to **shuffle** the questions, and the **font style**.
+3. Select **START QUIZ**.
+4. Answer each multiple-choice question before the timer runs out.
+5. Read the instant feedback after each answer (correct / incorrect, plus the correct answer).
+6. After the final question, view the **QUIZ COMPLETE** results screen.
+7. Choose **PLAY AGAIN** to restart (with a fresh shuffle when shuffle is on), **MAIN MENU** to change the settings, or **QUIT** to exit.
 
 ## Scoring
 
-- You earn **10 points** per correct answer (maximum score: **80**).
-- **Accuracy** is the percentage of correctly answered questions.
+- You earn **10 points** per correct answer (maximum score: 10 × the number of questions you chose, e.g. **80** for the default 8).
+- **Accuracy** is the percentage of correctly answered questions in the run.
 - Final rank:
   - **80% or higher:** Excellent! Programming star!
   - **50% or higher:** Good job! Keep practicing!
@@ -33,9 +39,18 @@ Code Quest takes players through a fast-paced quiz of programming fundamentals. 
 
 | Input | Action |
 | --- | --- |
-| Mouse | Select an answer |
+| Mouse | Change settings on the menu, select an answer, use the results buttons |
 | F11 | Toggle fullscreen |
 | Window close button / **QUIT** button (results screen) | Exit the game |
+
+## Fonts
+
+The **Font style** row on the main menu changes the font used everywhere in the game. Use the `<` and `>` buttons to cycle through the choices.
+
+- **Built in:** **Default** (raylib's bitmap font) plus the Windows fonts Segoe UI, Arial, Calibri, Verdana, Trebuchet MS, Georgia, Times New Roman, Comic Sans MS, Impact, Consolas and Courier New. Only the ones installed on your system are listed.
+- **Your own:** drop any `.ttf` or `.otf` file into the `fonts` folder next to `JadeByte.exe` (subfolders are scanned too) and it appears in the list under its file name, e.g. `pixel-font.ttf` shows up as `pixel-font`. See [`fonts/README.txt`](fonts/README.txt).
+
+The game reads the `fonts` folder from the directory it was started in, so keep the game in its own folder and launch it from there (double-clicking the exe does this for you). The choice applies for the current session and resets to **Default** when the game is started again.
 
 ## Requirements
 
@@ -43,92 +58,149 @@ Code Quest takes players through a fast-paced quiz of programming fundamentals. 
 - **Graphics:** OpenGL 3.3 or higher
 - **Audio:** Sound card / audio output recommended
 - **Disk space:** Approximately 4 MB
+- **Distribution:** the release build is a **single self-contained `.exe`** — no installer, no DLLs, and no Visual C++ redistributable needed
 
 ## Installation
 
-### From GitHub
+There are two ways to get the game: **download the ready-to-play build** (easiest, no tools) or **build it from source**.
 
-1. Clone this repository:
+### Option 1 — Download and play (no build tools needed)
+
+1. Open the [Releases](https://github.com/thevinnnzzz/JadeByte/releases) page and open the newest release.
+2. Under **Assets**, download **`JadeByte.exe`**.
+3. Create a folder for the game (for example `Desktop\JadeByte`) and move `JadeByte.exe` into it. Use a folder you are allowed to write to — not `C:\Program Files`.
+4. Double-click **`JadeByte.exe`** and play.
+
+That is everything: the game is a single 64-bit program with raylib compiled in. It needs no installer and no extra files, and `background_music.wav` is generated by the game itself the first time it runs.
+
+Notes:
+
+- Windows may show **"Windows protected your PC"** (SmartScreen) because the file is not code-signed. Click **More info → Run anyway**.
+- Keep the game in its own folder: it looks for a `fonts` folder and (re)writes `background_music.wav` next to where it was started from.
+- Want a different typeface? Create a `fonts` folder in the game folder and drop `.ttf` / `.otf` files into it. See [Fonts](#fonts).
+
+### Option 2 — Build from source
+
+**What you need**
+
+- **raylib** — the easiest route is the **raylib Windows Installer** from [raylib.com](https://www.raylib.com/) (also available on the raylib [itch.io page](https://raysan5.itch.io/raylib)). It installs raylib together with a C/C++ compiler (w64devkit / GCC) and a preconfigured editor into `C:\raylib`, so nothing has to be configured by hand. Alternatively, clone [raylib](https://github.com/raysan5/raylib) and build it with [CMake](https://cmake.org/).
+- **A C/C++ compiler** — w64devkit (comes with the raylib installer), [MSYS2](https://www.msys2.org/), or any other MinGW-w64 GCC.
+
+**Step 1 — Get the source**
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/thevinnnzzz/JadeByte.git
+cd JadeByte
 ```
 
-Or download the repository as a ZIP from GitHub and extract it.
+Or download the repository as a ZIP from the green **Code** button and extract it.
 
-2. Make sure the following files are in the project folder:
+**Step 2 — Compile the game**
 
+If you installed raylib with the Windows Installer (in `C:\raylib`), run this from the project folder:
+
+```bash
+"C:/raylib/w64devkit/bin/g++.exe" main.cpp -o JadeByte.exe -IC:/raylib/raylib/src -LC:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
 ```
-CodeQuest/
-├── main.cpp
-├── background_music.wav
-└── CodeQuest.exe   (only present if the prebuilt exe was committed)
+
+Add `-std=c++17 -Wall -Wextra` to build with the same language standard and warnings the project is developed with. Adjust the raylib paths (`C:/raylib/raylib/src`) if your copy lives somewhere else — the folder must contain `raylib.h` and `libraylib.a`.
+
+If you installed raylib through the MSYS2 package manager instead, install the compiler and raylib packages for your shell's environment and link without extra paths (headers and libraries are already in the toolchain):
+
+```bash
+# run this in a "UCRT64" shell (or swap ucrt- for nothing in a MINGW64 shell)
+pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-raylib
+g++ main.cpp -o JadeByte.exe -lraylib -lopengl32 -lgdi32 -lwinmm
 ```
 
-3. Run the game.
+### Running the Game
 
-**Option A – Run the prebuilt game**
-
-If `CodeQuest.exe` is present in the project folder, double-click it, or run it from a terminal:
+Double-click **`JadeByte.exe`**, or start it from a terminal:
 
 ```bat
-CodeQuest.exe
+JadeByte.exe
 ```
 
-**Option B – Build from source** (see [Building from Source](#building-from-source) below).
-
-> **Important:** The repository's `.gitignore` excludes the `CodeQuest.exe` build artifact, so a fresh clone from GitHub will usually **not** include the prebuilt executable. If `CodeQuest.exe` is missing, you must build the game from source.
-
-### Building from Source (Optional)
-
-If you prefer to build the game yourself, you need:
-
-- [raylib](https://github.com/raysan5/raylib) (clone the sources from GitHub)
-- A C/C++ compiler such as MinGW GCC (for example, from [MSYS2](https://www.msys2.org/) or [w64devkit](https://github.com/skeeto/w64devkit))
-- [CMake](https://cmake.org/) (only needed to build raylib itself)
-
-**Step 1 – Build raylib:**
+In **Git Bash or MSYS2**, the current folder is not on `PATH`, so the `./` prefix is required:
 
 ```bash
-git clone https://github.com/raysan5/raylib.git
-cd raylib
-cmake -B build
-cmake --build build
+./JadeByte.exe
 ```
 
-**Step 2 – Compile the game:**
+### What is in the repository
 
-From the CodeQuest project folder, run:
+```
+JadeByte/
+├── main.cpp              # the whole game (C++ / raylib)
+├── README.md
+├── .gitignore            # keeps build output out of the repository
+├── background_music.wav  # optional — the game regenerates it on startup
+└── fonts/
+    └── README.txt        # drop your own .ttf / .otf files in this folder
+```
+
+## Sharing the Game on GitHub
+
+### 1. Upload the source
+
+The source and documentation live in the repository:
 
 ```bash
-g++ main.cpp -o CodeQuest.exe -IC:/raylib/raylib/src -LC:/raylib/raylib/build -lraylib -lopengl32 -lgdi32 -lwinmm
+git add main.cpp README.md .gitignore fonts/README.txt
+git commit -m "Rebrand the game as JadeByte and document distribution"
+git push
 ```
 
-Adjust the paths (`/raylib/raylib/...`) if you cloned or built raylib somewhere else.
+`.gitignore` deliberately excludes build output (`JadeByte.exe`, `*.o`, `*.obj`, `*.dll`, `*.a`), so the repository stays source-only and no large binaries end up in its history. `background_music.wav` may be committed or left out; the game writes it on startup either way.
 
-Alternatively, if you installed raylib through the MSYS2 package manager, you can build and link in one step:
+### 2. Publish a ready-to-play build (Releases)
+
+Because the `.exe` is not tracked by Git, the **"Source code (zip)"** download on GitHub does **not** contain a playable game. To give someone a file they can simply run, attach the compiled `JadeByte.exe` to a **GitHub Release**. The release page then becomes a permanent link you can share.
+
+**With the GitHub CLI** (from the project folder, after `gh auth login`):
 
 ```bash
-pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-raylib
-g++ main.cpp -o CodeQuest.exe -i/mingw64/src/raylib -L/mingw64/lib -lraylib -lopengl32 -lgdi32 -lwinmm
+gh release create v1.0.0 JadeByte.exe --title "JadeByte v1.0.0" --notes "First public build. Windows 10/11 64-bit: download JadeByte.exe, put it in its own folder and double-click it."
 ```
 
-### Playing
+**With the website:** open the repository → **Releases** → **Draft a new release** → create a new tag (for example `v1.0.0`) → drag `JadeByte.exe` into the *Attach binaries* box → **Publish release**.
 
-Once the build (or prebuilt copy) is ready:
+Either way the game appears under **Assets** on the release as a direct download, and new players can be pointed at:
 
-```bat
-CodeQuest.exe
+```
+https://github.com/thevinnnzzz/JadeByte/releases/latest
 ```
 
-Or simply double-click **CodeQuest.exe**.
+Optional: attach a ZIP instead that contains `JadeByte.exe` and `fonts/README.txt` side by side, so the custom-font instructions travel with the game. Players extract it and double-click the exe.
+
+### 3. Ship an update
+
+Rebuild the game, then either publish a new release:
+
+```bash
+gh release create v1.1.0 JadeByte.exe --title "JadeByte v1.1.0" --notes "Describe what changed since the last build."
+```
+
+or replace the file on an existing release (`--clobber` overwrites the old asset):
+
+```bash
+gh release upload v1.0.0 JadeByte.exe --clobber
+```
+
+### Repository visibility
+
+Others can download the game only if the repository is **public**. A private repository is visible to you and the collaborators you invite (**Settings → Collaborators**). To change it: **Settings → General → Danger Zone → Change repository visibility**.
 
 ## Troubleshooting
 
-- If the game window does not open, update your graphics drivers so OpenGL 3.3 or higher is supported.
-- Ensure speakers or headphones are connected for sound effects and music.
-- If compilation fails, verify that your MinGW compiler and raylib library are correctly set up.
+- **`JadeByte.exe: command not found` (Git Bash / MSYS2)** — those shells do not look for programs in the current folder. Run `./JadeByte.exe`, or just double-click the file in Explorer.
+- **"Windows protected your PC"** — SmartScreen warning for an unsigned program. Click **More info → Run anyway**.
+- **The game window does not open** — update your graphics drivers so OpenGL 3.3 or higher is supported.
+- **No sound or music** — check that speakers or headphones are connected. The game writes `background_music.wav` into the folder it runs from, so that folder must be writable; if the write fails the game still runs, just without background music.
+- **My custom fonts are not listed in the menu** — put the `.ttf` / `.otf` files in a `fonts` folder next to `JadeByte.exe` and start the game from that folder (double-clicking the exe does this). Fonts added while the game is running appear only after a restart, and only `.ttf` / `.otf` files are supported.
+- **A Windows font is missing from the font list** — the game lists a built-in choice only if that font is actually installed on your PC (it reads it from `C:\Windows\Fonts`).
+- **Compilation fails** — double-check the compiler and raylib paths in the [compile command](#option-2--build-from-source), and make sure `raylib.h` and `libraylib.a` exist at the paths you passed.
 
 ## License
 
-Code Quest source code is provided for personal use. raylib is licensed under the zlib license.
+JadeByte source code is provided for personal use. raylib is licensed under the zlib license.

@@ -1,4 +1,4 @@
-@'
+JadeByte.exe
 CodeQuest.exe
 *.o
 *.obj
@@ -6,4 +6,3 @@ CodeQuest.exe
 *.a
 .vscode/
 .idea/
-'@ | Set-Content .gitignore
