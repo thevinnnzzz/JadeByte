@@ -45,6 +45,12 @@ const int SAMPLE_RATE = 44100;
 
 Sound correctSound = {};
 Sound wrongSound = {};
+Sound yameteSound = {};
+Sound moanSound = {};
+Sound akosidogie_incorrectSound = {};
+Sound akosidogie_correctSound = {};
+Sound malupiton_incorrectSound = {};
+Sound malupiton_correctSound = {};
 Sound tickSound = {};
 Sound finishSound = {};
 
@@ -138,6 +144,12 @@ Sound CreateSoundFromSamples(const std::vector<short>& samples)
 
 Music backgroundMusic = {};
 
+enum MusicStyle {
+    MUSIC_STYLE_ARCADE,
+    MUSIC_STYLE_AKOSIDOGIE,
+    MUSIC_STYLE_MALUPITON
+};
+
 const float A4 = 440.00f;
 const float B4 = 493.88f;
 const float C5 = 523.25f;
@@ -153,7 +165,8 @@ void NoteInto(
     int start,
     float freq,
     float duration,
-    float volume
+    float volume,
+    float harmonic = 0.0f
 )
 {
     int length = (int)(SAMPLE_RATE * duration);
@@ -179,13 +192,23 @@ void NoteInto(
             }
         }
 
-        track[idx] += std::sin(phase) * volume * envelope;
+        float value = std::sin(phase);
+
+        if (harmonic > 0.0f) {
+            value += harmonic * std::sin(phase * 2.0f);
+        }
+
+        track[idx] += value * volume * envelope;
     }
 }
 
-std::vector<short> GenerateMusic()
+// Every track is eight bars of the same sine-based synth; the style picks the
+// melody, the bass line and how bright the tone is.
+std::vector<short> GenerateMusic(int style)
 {
-    const std::vector<std::pair<float, float>> melody = {
+    const bool arcade = (style == MUSIC_STYLE_ARCADE);
+
+    const std::vector<std::pair<float, float>> themeMelody = {
         { A4, 0.50f }, { C5, 0.25f }, { E5, 0.25f },
         { A5, 0.50f }, { G5, 0.25f }, { E5, 0.25f },
 
@@ -199,12 +222,38 @@ std::vector<short> GenerateMusic()
         { B4, 0.50f }, { E5, 0.50f }
     };
 
-    const std::vector<std::pair<float, float>> bass = {
+    const std::vector<std::pair<float, float>> themeBass = {
         { 110.00f, 1.0f }, { 110.00f, 1.0f },
         {  87.31f, 1.0f }, {  87.31f, 1.0f },
         {  98.00f, 1.0f }, {  98.00f, 1.0f },
         {  82.41f, 1.0f }, {  82.41f, 1.0f }
     };
+
+    const std::vector<std::pair<float, float>> arcadeMelody = {
+        { A4, 0.25f }, { A4, 0.25f }, { C5, 0.25f }, { E5, 0.25f },
+        { A5, 0.25f }, { G5, 0.25f }, { E5, 0.25f }, { C5, 0.25f },
+
+        { F5, 0.25f }, { F5, 0.25f }, { A5, 0.25f }, { G5, 0.25f },
+        { E5, 0.50f }, { D5, 0.50f },
+
+        { G4, 0.25f }, { B4, 0.25f }, { D5, 0.25f }, { G5, 0.25f },
+        { F5, 0.25f }, { E5, 0.25f }, { D5, 0.25f }, { B4, 0.25f },
+
+        { C5, 0.25f }, { E5, 0.25f }, { C5, 0.25f }, { E5, 0.25f },
+        { A4, 0.50f }, { A4, 0.50f }
+    };
+
+    const std::vector<std::pair<float, float>> arcadeBass = {
+        { 110.00f, 1.0f }, {  98.00f, 1.0f },
+        {  87.31f, 1.0f }, {  98.00f, 1.0f },
+        {  98.00f, 1.0f }, {  87.31f, 1.0f },
+        {  82.41f, 1.0f }, { 110.00f, 1.0f }
+    };
+
+    const std::vector<std::pair<float, float>>& melody =
+        arcade ? arcadeMelody : themeMelody;
+    const std::vector<std::pair<float, float>>& bass =
+        arcade ? arcadeBass : themeBass;
 
     int totalSamples = SAMPLE_RATE * 8;
 
@@ -219,7 +268,8 @@ std::vector<short> GenerateMusic()
             offset,
             note.first,
             note.second,
-            0.22f
+            arcade ? 0.20f : 0.22f,
+            arcade ? 0.30f : 0.0f
         );
 
         offset += (int)(SAMPLE_RATE * note.second);
@@ -233,7 +283,8 @@ std::vector<short> GenerateMusic()
             offset,
             note.first,
             note.second,
-            0.16f
+            0.16f,
+            arcade ? 0.15f : 0.0f
         );
 
         offset += (int)(SAMPLE_RATE * note.second);
@@ -254,18 +305,196 @@ std::vector<short> GenerateMusic()
     return samples;
 }
 
-void InitMusic()
-{
-    std::vector<short> samples = GenerateMusic();
-    Wave wave = CreateWave(samples);
+const float MUSIC_VOLUME = 0.35f;
 
-    if (ExportWave(wave, "background_music.wav")) {
-        backgroundMusic = LoadMusicStream("background_music.wav");
-        backgroundMusic.looping = true;
-        SetMusicVolume(backgroundMusic, 0.35f);
+struct MusicTrack {
+    std::string name;
+    std::string path;               // empty for the two generated tracks
+    int style;                      // MusicStyle for generated tracks
+    std::vector<unsigned char> wav; // encoded audio the decoder streams from
+};
+
+std::vector<MusicTrack> musicTracks;
+int musicChoiceIndex = 0;
+bool musicStale = false;
+std::string musicChoicePath;  // survives LoadMusicTrack reloads so we can identify the track
+void PushLE16(std::vector<unsigned char>& out, unsigned short value)
+{
+    out.push_back((unsigned char)(value & 0xFF));
+    out.push_back((unsigned char)((value >> 8) & 0xFF));
+}
+
+void PushLE32(std::vector<unsigned char>& out, unsigned int value)
+{
+    out.push_back((unsigned char)(value & 0xFF));
+    out.push_back((unsigned char)((value >> 8) & 0xFF));
+    out.push_back((unsigned char)((value >> 16) & 0xFF));
+    out.push_back((unsigned char)((value >> 24) & 0xFF));
+}
+
+// Builds a complete 16-bit mono .wav file image in memory. The streaming
+// decoder reads straight out of this buffer, so it has to stay alive for as
+// long as the track is loaded - that is why it is kept in MusicTrack.
+std::vector<unsigned char> EncodeWav(
+    const std::vector<short>& samples,
+    int sampleRate
+)
+{
+    const unsigned short channels = 1;
+    const unsigned short bitsPerSample = 16;
+    unsigned int dataSize = (unsigned int)(samples.size() * sizeof(short));
+
+    std::vector<unsigned char> wav;
+    wav.reserve(44 + dataSize);
+
+    const char riff[4] = { 'R', 'I', 'F', 'F' };
+    const char wave[4] = { 'W', 'A', 'V', 'E' };
+    const char fmt[4] = { 'f', 'm', 't', ' ' };
+    const char data[4] = { 'd', 'a', 't', 'a' };
+
+    wav.insert(wav.end(), riff, riff + 4);
+    PushLE32(wav, 36 + dataSize);
+    wav.insert(wav.end(), wave, wave + 4);
+
+    wav.insert(wav.end(), fmt, fmt + 4);
+    PushLE32(wav, 16);
+    PushLE16(wav, 1);                       // PCM
+    PushLE16(wav, channels);
+    PushLE32(wav, (unsigned int)sampleRate);
+    PushLE32(
+        wav,
+        (unsigned int)(sampleRate * channels * bitsPerSample / 8)
+    );
+    PushLE16(wav, (unsigned short)(channels * bitsPerSample / 8));
+    PushLE16(wav, bitsPerSample);
+
+    wav.insert(wav.end(), data, data + 4);
+    PushLE32(wav, dataSize);
+
+    for (short sample : samples) {
+        PushLE16(wav, (unsigned short)sample);
     }
 
-    free(wave.data);
+    return wav;
+}
+
+void AddMusicTrack(const std::string& name, const std::string& path, int style)
+{
+    for (const MusicTrack& existing : musicTracks) {
+        if (existing.name == name ||
+            (!path.empty() && existing.path == path)) {
+            return;
+        }
+    }
+
+    MusicTrack track;
+    track.name = name;
+    track.path = path;
+    track.style = style;
+
+    musicTracks.push_back(track);
+}
+
+// The two built-in tracks are generated in code; every audio file in the music
+// folder is listed after them, in the same way the fonts folder works.
+void DiscoverMusic()
+{
+    // The three tracks the player is meant to choose from: Arcade (built-in),
+    // akosidogie (built-in, uses dogie.wav as the stream), and ph_music (the
+    // file in the music folder).
+    musicTracks.clear();
+    musicChoiceIndex = 0;
+
+    AddMusicTrack("Arcade", "", MUSIC_STYLE_ARCADE);
+    AddMusicTrack("akosidogie", "dogie.wav", MUSIC_STYLE_AKOSIDOGIE);
+    AddMusicTrack("malupiton", "malupiton.wav", MUSIC_STYLE_MALUPITON);
+
+    if (DirectoryExists("music")) {
+        FilePathList files = LoadDirectoryFilesEx(
+            "music",
+            ".wav;.ogg;.mp3;.qoa",
+            true
+        );
+
+        std::vector<std::string> paths;
+
+        for (unsigned int i = 0; i < files.count; i++) {
+            paths.push_back(files.paths[i]);
+        }
+
+        std::sort(paths.begin(), paths.end());
+
+        for (const std::string& path : paths) {
+            // Skip the two files that back the built-in akosidogie track so the
+            // same audio does not appear twice (once as the stream, once as a
+            // discovered file).
+            if (path == "dogie.wav" ||
+                path == "an-lala-dogie.wav" ||
+                path == "shet.wav" ||
+                path == "malupiton.wav" ||
+                path == "malupiton-aray-ko.wav" ||
+                path == "malupiton-burger-ka-sakin.wav") {
+                continue;
+            }
+
+            AddMusicTrack(
+                GetFileNameWithoutExt(path.c_str()),
+                path,
+                -1
+            );
+        }
+
+        UnloadDirectoryFiles(files);
+    }
+
+    // Default the choice to Arcade if it still exists after discovery.
+    musicChoiceIndex = 0;
+
+    for (int i = 0; i < (int)musicTracks.size(); i++) {
+        if (musicTracks[i].name == "Arcade") {
+            musicChoiceIndex = i;
+            break;
+        }
+    }
+}
+
+Music LoadMusicTrack(int index)
+{
+    Music music = {};
+
+    if (index < 0 || index >= (int)musicTracks.size()) {
+        return music;
+    }
+
+    MusicTrack& track = musicTracks[index];
+
+    if (track.path.empty()) {
+        if (track.wav.empty()) {
+            std::vector<short> samples = GenerateMusic(track.style);
+            track.wav = EncodeWav(samples, SAMPLE_RATE);
+        }
+
+        music = LoadMusicStreamFromMemory(
+            ".wav",
+            track.wav.data(),
+            (int)track.wav.size()
+        );
+    } else {
+        music = LoadMusicStream(track.path.c_str());
+    }
+
+    if (music.frameCount > 0) {
+        music.looping = true;
+        SetMusicVolume(music, MUSIC_VOLUME);
+    }
+
+    return music;
+}
+
+void InitMusic()
+{
+    DiscoverMusic();
+    backgroundMusic = LoadMusicTrack(musicChoiceIndex);
 }
 
 void InitSounds()
@@ -278,6 +507,18 @@ void InitSounds()
     wrongSound = CreateSoundFromSamples(
         GenerateTone(220.0f, 150.0f, 0.35f, 0.45f)
     );
+
+    yameteSound = LoadSound("Yamete.wav");
+
+    moanSound = LoadSound("moan.wav");
+
+    akosidogie_incorrectSound = LoadSound("an-lala-dogie.wav");
+
+    akosidogie_correctSound = LoadSound("shet.wav");
+
+    malupiton_incorrectSound = LoadSound("malupiton-aray-ko.wav");
+
+    malupiton_correctSound = LoadSound("malupiton-burger-ka-sakin.wav");
 
     tickSound = CreateSoundFromSamples(
         GenerateTone(1100.0f, 1100.0f, 0.06f, 0.25f)
@@ -296,8 +537,14 @@ void UnloadSounds()
 {
     UnloadSound(correctSound);
     UnloadSound(wrongSound);
+    UnloadSound(yameteSound);
+    UnloadSound(moanSound);
     UnloadSound(tickSound);
     UnloadSound(finishSound);
+    UnloadSound(akosidogie_incorrectSound);
+    UnloadSound(akosidogie_correctSound);
+    UnloadSound(malupiton_incorrectSound);
+    UnloadSound(malupiton_correctSound);
 }
 
 std::vector<Question> questions = {
@@ -1171,6 +1418,10 @@ std::string feedbackText;
 
 int lastTickSecond = -1;
 
+// Pause modal (opened from in-game tab clicks).
+bool pauseModalOpen = false;
+bool pauseModalResuming = false;
+
 int ClampInt(int value, int low, int high)
 {
     return std::max(low, std::min(value, high));
@@ -1228,6 +1479,9 @@ void StartQuiz()
     answeredCorrectly = false;
     feedbackText.clear();
     lastTickSecond = -1;
+
+    pauseModalOpen = false;
+    pauseModalResuming = false;
 }
 
 bool Button(
@@ -1361,11 +1615,103 @@ void SubmitAnswer(int answer)
     feedbackActive = true;
     feedbackTimer = 1.6f;
 
+    bool isArcade = musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size() &&
+        musicTracks[musicChoiceIndex].path.empty() &&
+        musicTracks[musicChoiceIndex].style == MUSIC_STYLE_ARCADE;
+
+    bool isPhMusic = !musicChoicePath.empty() &&
+        (musicChoicePath.find("ph_music") != std::string::npos ||
+         musicChoicePath.find("ph_background") != std::string::npos);
+
+    bool isAkosidogie = musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size() &&
+        musicTracks[musicChoiceIndex].path == "dogie.wav";
+
+    bool isAkosidogieFile = !musicChoicePath.empty() &&
+        (musicChoicePath.find("dogie") != std::string::npos ||
+         musicChoicePath.find("akosidogie") != std::string::npos);    bool isAkosidogieTrack = isAkosidogie || isAkosidogieFile;
+
+    bool isMalupiton = musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size() &&
+        musicTracks[musicChoiceIndex].path == "malupiton.wav";
+
+    bool isMalupitonFile = !musicChoicePath.empty() &&
+        (musicChoicePath.find("malupiton") != std::string::npos);
+
+    bool isMalupitonTrack = isMalupiton || isMalupitonFile;
+
     if (answeredCorrectly) {
-        PlaySound(correctSound);
+        if (isAkosidogieTrack) {
+            PlaySound(akosidogie_correctSound);
+        } else if (isMalupitonTrack) {
+            PlaySound(malupiton_correctSound);
+        } else {
+            PlaySound(correctSound);
+        }
+
+        if (isPhMusic) {
+            PlaySound(moanSound);
+        }
     } else {
-        PlaySound(wrongSound);
+        if (isArcade) {
+            PlaySound(wrongSound);
+        } else if (isPhMusic) {
+            PlaySound(yameteSound);
+        } else if (isAkosidogieTrack) {
+            PlaySound(akosidogie_incorrectSound);
+        } else if (isMalupitonTrack) {
+            PlaySound(malupiton_incorrectSound);
+        }
     }
+}
+
+// One settings row: a label, the current choice, and < > buttons to cycle it.
+// Returns the index the player moved to, so the caller can react (reload the
+// font atlases, restart the music stream, ...).
+int DrawChoiceRow(
+    const char* label,
+    float rowY,
+    int count,
+    const char* currentName,
+    int index
+)
+{
+    UIDrawTextFitted(label, 180, rowY + 12, 270, 18, 12, WHITE);
+
+    if (count <= 0) {
+        return index;
+    }
+
+    int change = 0;
+
+    if (Button("<", { 463, rowY, 36, 42 }, BLUE)) {
+        change = -1;
+    }
+
+    if (Button(">", { 675, rowY, 36, 42 }, BLUE)) {
+        change = 1;
+    }
+
+    std::string name = UIFitLabel(currentName, 152, 16);
+    float nameSize = UIFitFontSize(name.c_str(), 152, 16, 9);
+    Vector2 metrics = UIMeasureText(name.c_str(), nameSize);
+
+    DrawRectangleRounded({ 507, rowY, 160, 42 }, 0.18f, 8, BACKGROUND);
+
+    UIDrawText(
+        name.c_str(),
+        507 + (160 - metrics.x) / 2.0f,
+        rowY + (42 - metrics.y) / 2.0f,
+        nameSize,
+        WHITE
+    );
+
+    if (change != 0) {
+        return (index + change + count) % count;
+    }
+
+    return index;
 }
 
 void DrawMenu()
@@ -1380,7 +1726,7 @@ void DrawMenu()
 
     // Settings panel
     DrawRectangleRounded(
-        { 150, 150, 600, 308 },
+        { 150, 150, 600, 346 },
         0.08f,
         8,
         PANEL
@@ -1388,10 +1734,11 @@ void DrawMenu()
 
     DrawCenteredText("QUIZ SETTINGS", 162, 14, MUTED);
 
-    const float row1 = 190.0f;
-    const float row2 = 246.0f;
-    const float row3 = 302.0f;
-    const float row4 = 358.0f;
+    const float row1 = 186.0f;
+    const float row2 = 238.0f;
+    const float row3 = 290.0f;
+    const float row4 = 342.0f;
+    const float row5 = 394.0f;
 
     UIDrawTextFitted("Questions", 180, row1 + 12, 270, 18, 12, WHITE);
 
@@ -1438,52 +1785,32 @@ void DrawMenu()
         shuffleQuestions = !shuffleQuestions;
     }
 
-    UIDrawTextFitted("Font style", 180, row4 + 12, 270, 18, 12, WHITE);
+    int newFontIndex = DrawChoiceRow(
+        "Font style",
+        row4,
+        (int)fontChoices.size(),
+        fontChoices[fontChoiceIndex].name.c_str(),
+        fontChoiceIndex
+    );
 
-    int fontCount = (int)fontChoices.size();
-
-    if (Button("<", { 463, row4, 36, 42 }, BLUE)) {
-        fontChoiceIndex = (fontChoiceIndex + fontCount - 1) % fontCount;
+    if (newFontIndex != fontChoiceIndex) {
+        fontChoiceIndex = newFontIndex;
         fontAtlasesStale = true;
     }
 
-    if (Button(">", { 675, row4, 36, 42 }, BLUE)) {
-        fontChoiceIndex = (fontChoiceIndex + 1) % fontCount;
-        fontAtlasesStale = true;
+    int newMusicIndex = DrawChoiceRow(
+        "Music",
+        row5,
+        (int)musicTracks.size(),
+        musicTracks[musicChoiceIndex].name.c_str(),
+        musicChoiceIndex
+    );
+
+    if (newMusicIndex != musicChoiceIndex) {
+        musicChoiceIndex = newMusicIndex;
+        musicChoicePath = musicTracks[musicChoiceIndex].path;
+        musicStale = true;
     }
-
-    std::string fontName = UIFitLabel(
-        fontChoices[fontChoiceIndex].name,
-        152,
-        16
-    );
-
-    float fontNameSize = UIFitFontSize(
-        fontName.c_str(),
-        152,
-        16,
-        9
-    );
-
-    Vector2 fontNameMetrics = UIMeasureText(
-        fontName.c_str(),
-        fontNameSize
-    );
-
-    DrawRectangleRounded(
-        { 507, row4, 160, 42 },
-        0.18f,
-        8,
-        BACKGROUND
-    );
-
-    UIDrawText(
-        fontName.c_str(),
-        507 + (160 - fontNameMetrics.x) / 2.0f,
-        row4 + (42 - fontNameMetrics.y) / 2.0f,
-        fontNameSize,
-        WHITE
-    );
 
     if (questionsChange != 0) {
         quizLength = ClampInt(
@@ -1505,21 +1832,21 @@ void DrawMenu()
         (std::to_string(quizLength) + " questions  |  " +
          std::to_string((int)questionTime) + "s each  |  " +
          std::to_string(POINTS_PER_QUESTION) + " points each").c_str(),
-        412,
+        450,
         14,
         MUTED
     );
 
     DrawCenteredText(
-        "Drop .ttf or .otf files into the fonts folder to add your own",
-        432,
+        "Add fonts (.ttf/.otf) in the fonts folder and music (.wav/.ogg/.mp3) in the music folder",
+        470,
         12,
         MUTED
     );
 
     if (Button(
         "START QUIZ",
-        { 300, 478, 300, 54 },
+        { 300, 512, 300, 54 },
         BLUE
     )) {
         StartQuiz();
@@ -1527,7 +1854,7 @@ void DrawMenu()
 
     DrawCenteredText(
         "ESC - Quit Game   |   F11 - Toggle Fullscreen",
-        556,
+        588,
         15,
         MUTED
     );
@@ -1638,6 +1965,34 @@ void DrawQuiz()
             60, 550, 810, 17, 12, MUTED
         );
     }
+
+    // In-game tab: opens the pause modal so the player can back out or
+    // restart without quitting the app.
+    float tabsY = 20.0f;
+    float tabHeight = 34.0f;
+    float tabW = 90.0f;
+    float firstTabX = SCREEN_WIDTH - tabW - 12.0f;
+
+    const char* tabs[] = { "SETTINGS" };
+    int tabCount = (int)(sizeof(tabs) / sizeof(tabs[0]));
+
+    for (int i = 0; i < tabCount; i++) {
+        float tabX = firstTabX - i * (tabW + 6.0f);
+
+        Rectangle bounds = {
+            tabX,
+            tabsY,
+            tabW,
+            tabHeight
+        };
+
+        Color baseColor = PANEL;
+
+        if (Button(tabs[i], bounds, baseColor)) {
+            pauseModalOpen = true;
+            pauseModalResuming = false;
+        }
+    }
 }
 
 void DrawResults()
@@ -1708,6 +2063,43 @@ void DrawResults()
     }
 }
 
+void DrawPauseModal()
+{
+    DrawRectangleRounded(
+        { 150, 150, 600, 300 },
+        0.06f,
+        8,
+        PANEL
+    );
+
+    DrawCenteredText("PAUSED", 200, 42, BLUE);
+
+    DrawCenteredText(
+        "Click a tab to continue, or pick an action below.",
+        250,
+        15,
+        MUTED
+    );
+
+    if (Button(
+        "BACK TO MAIN MENU",
+        { 225, 295, 450, 52 },
+        PANEL
+    )) {
+        pauseModalOpen = false;
+        screen = MENU;
+    }
+
+    if (Button(
+        "RESTART QUIZ",
+        { 225, 365, 450, 52 },
+        BLUE
+    )) {
+        pauseModalOpen = false;
+        StartQuiz();
+    }
+}
+
 int main()
 {
     InitWindow(
@@ -1721,11 +2113,17 @@ int main()
     RenderTexture2D target =
         LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT);
 
+    pauseModalOpen = false;
+    pauseModalResuming = false;
+
     SetTargetFPS(60);
     InitAudioDevice();
     InitSounds();
     InitMusic();
-    PlayMusicStream(backgroundMusic);
+
+    if (backgroundMusic.frameCount > 0) {
+        PlayMusicStream(backgroundMusic);
+    }
 
     while (!WindowShouldClose()) {
         float deltaTime = GetFrameTime();
@@ -1734,6 +2132,17 @@ int main()
         if (fontAtlasesStale) {
             UnloadFontAtlases();
             fontAtlasesStale = false;
+        }
+
+        if (musicStale) {
+            musicStale = false;
+
+            UnloadMusicStream(backgroundMusic);
+            backgroundMusic = LoadMusicTrack(musicChoiceIndex);
+
+            if (backgroundMusic.frameCount > 0) {
+                PlayMusicStream(backgroundMusic);
+            }
         }
 
         if (IsKeyPressed(KEY_F11)) {
@@ -1770,6 +2179,16 @@ int main()
         uiOffsetY =
             ((float)GetScreenHeight() -
              SCREEN_HEIGHT * scale) / 2.0f;
+
+        // Pause modal state: opened from in-game tabs, dismisses on button press.
+
+        if (pauseModalOpen && !pauseModalResuming) {
+            pauseModalResuming = IsKeyPressed(KEY_ESCAPE);
+        } else if (pauseModalOpen && pauseModalResuming) {
+            pauseModalOpen = false;
+            pauseModalResuming = false;
+            screen = MENU;
+        }
 
         // Drawing stays in 900x620 layout units; the camera scales it up to
         // the render target's resolution.
@@ -1835,6 +2254,10 @@ int main()
                 break;
         }
 
+        if (pauseModalOpen) {
+            DrawPauseModal();
+        }
+
         EndMode2D();
         EndTextureMode();
 
@@ -1872,6 +2295,7 @@ int main()
     UnloadRenderTexture(target);
     UnloadSounds();
     UnloadMusicStream(backgroundMusic);
+    musicTracks.clear();
 
     UnloadFontAtlases();
 
