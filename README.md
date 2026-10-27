@@ -47,10 +47,12 @@ JadeByte takes players through a fast-paced quiz of programming fundamentals. Th
 
 The **Font style** row on the main menu changes the font used everywhere in the game. Use the `<` and `>` buttons to cycle through the choices.
 
-- **Built in:** **Default** (raylib's bitmap font) plus the Windows fonts Segoe UI, Arial, Calibri, Verdana, Trebuchet MS, Georgia, Times New Roman, Comic Sans MS, Impact, Consolas and Courier New. Only the ones installed on your system are listed.
+- **Built in:** the Windows fonts Segoe UI, Arial, Calibri, Verdana, Trebuchet MS, Georgia, Times New Roman, Comic Sans MS, Impact, Consolas and Courier New — only the ones installed on your system are listed — plus **Default**, which is raylib's tiny built-in bitmap font (kept as a fallback; it looks chunky at menu sizes).
 - **Your own:** drop any `.ttf` or `.otf` file into the `fonts` folder next to `JadeByte.exe` (subfolders are scanned too) and it appears in the list under its file name, e.g. `pixel-font.ttf` shows up as `pixel-font`. See [`fonts/README.txt`](fonts/README.txt).
 
-The game reads the `fonts` folder from the directory it was started in, so keep the game in its own folder and launch it from there (double-clicking the exe does this for you). The choice applies for the current session and resets to **Default** when the game is started again.
+The game reads the `fonts` folder from the directory it was started in, so keep the game in its own folder and launch it from there (double-clicking the exe does this for you). The choice applies for the current session and resets to the first real font (usually Segoe UI) when the game is started again.
+
+Text is rasterised at the exact size it is shown at, and the game renders at full screen resolution, so glyphs stay sharp at every size and in fullscreen (F11).
 
 ## Requirements
 
@@ -95,12 +97,20 @@ cd JadeByte
 
 Or download the repository as a ZIP from the green **Code** button and extract it.
 
-**Step 2 — Compile the game**
+**Step 2 — Compile the resources (the app icon and version info)**
+
+The icon and the details shown in **Properties → Details** come from `jadebyte.rc`, which has to be compiled before linking. `windres.exe` comes with w64devkit (and with MinGW/MSYS2):
+
+```bash
+"C:/raylib/w64devkit/bin/windres.exe" jadebyte.rc -O coff -o jadebyte_resource.o
+```
+
+**Step 3 — Compile the game**
 
 If you installed raylib with the Windows Installer (in `C:\raylib`), run this from the project folder:
 
 ```bash
-"C:/raylib/w64devkit/bin/g++.exe" main.cpp -o JadeByte.exe -IC:/raylib/raylib/src -LC:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+"C:/raylib/w64devkit/bin/g++.exe" main.cpp jadebyte_resource.o -o JadeByte.exe -IC:/raylib/raylib/src -LC:/raylib/raylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
 ```
 
 Add `-std=c++17 -Wall -Wextra` to build with the same language standard and warnings the project is developed with. Adjust the raylib paths (`C:/raylib/raylib/src`) if your copy lives somewhere else — the folder must contain `raylib.h` and `libraylib.a`.
@@ -110,8 +120,11 @@ If you installed raylib through the MSYS2 package manager instead, install the c
 ```bash
 # run this in a "UCRT64" shell (or swap ucrt- for nothing in a MINGW64 shell)
 pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-raylib
-g++ main.cpp -o JadeByte.exe -lraylib -lopengl32 -lgdi32 -lwinmm
+windres jadebyte.rc -O coff -o jadebyte_resource.o
+g++ main.cpp jadebyte_resource.o -o JadeByte.exe -lraylib -lopengl32 -lgdi32 -lwinmm
 ```
+
+Leaving `jadebyte_resource.o` out of the link command still builds a working game, but the executable would show Windows' generic program icon and Properties would list no product name.
 
 ### Running the Game
 
@@ -132,6 +145,8 @@ In **Git Bash or MSYS2**, the current folder is not on `PATH`, so the `./` prefi
 ```
 JadeByte/
 ├── main.cpp              # the whole game (C++ / raylib)
+├── jadebyte.rc           # Windows resources: app icon + version info
+├── jadebyte.ico          # the icon itself, at 16/24/32/48/64/128/256 px
 ├── README.md
 ├── .gitignore            # keeps build output out of the repository
 ├── background_music.wav  # optional — the game regenerates it on startup
@@ -194,7 +209,7 @@ Others can download the game only if the repository is **public**. A private rep
 ## Troubleshooting
 
 - **`JadeByte.exe: command not found` (Git Bash / MSYS2)** — those shells do not look for programs in the current folder. Run `./JadeByte.exe`, or just double-click the file in Explorer.
-- **"Windows protected your PC"** — SmartScreen warning for an unsigned program. Click **More info → Run anyway**.
+- **"Windows protected your PC"** — SmartScreen warning for an unsigned program. Click **More info → Run anyway**. The app icon and the version details in **Properties → Details** make the file look like a normal application in Explorer, but only a code-signing certificate removes this warning for everyone who downloads it.
 - **The game window does not open** — update your graphics drivers so OpenGL 3.3 or higher is supported.
 - **No sound or music** — check that speakers or headphones are connected. The game writes `background_music.wav` into the folder it runs from, so that folder must be writable; if the write fails the game still runs, just without background music.
 - **My custom fonts are not listed in the menu** — put the `.ttf` / `.otf` files in a `fonts` folder next to `JadeByte.exe` and start the game from that folder (double-clicking the exe does this). Fonts added while the game is running appear only after a restart, and only `.ttf` / `.otf` files are supported.

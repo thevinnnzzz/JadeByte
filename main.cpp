@@ -883,13 +883,9 @@ std::vector<Question> questions = {
     }
 };
 
-const int FONT_BASE_SIZE = 64;
-
 struct FontChoice {
     std::string name;
     std::string path;
-    Font font;
-    bool loaded;
 };
 
 std::vector<FontChoice> fontChoices;
@@ -906,8 +902,6 @@ void AddFontChoice(const std::string& name, const std::string& path)
     FontChoice choice;
     choice.name = name;
     choice.path = path;
-    choice.font = Font{};
-    choice.loaded = false;
 
     fontChoices.push_back(choice);
 }
@@ -962,47 +956,114 @@ void DiscoverFonts()
 
         UnloadDirectoryFiles(files);
     }
+
+    // Start on a real vector font. raylib's built-in font is a tiny bitmap
+    // atlas that has to be stretched to reach menu sizes, which is what makes
+    // it look blurry; it stays in the list as a fallback.
+    fontChoiceIndex = 0;
+
+    for (int i = 0; i < (int)fontChoices.size(); i++) {
+        if (!fontChoices[i].path.empty()) {
+            fontChoiceIndex = i;
+            break;
+        }
+    }
 }
 
-// Loads the selected font on first use and falls back to the default
-Font UIFont()
+// How much the 900x620 canvas is enlarged on screen, and where it sits
+float uiScale = 1.0f;
+float uiOffsetX = 0.0f;
+float uiOffsetY = 0.0f;
+
+// One glyph atlas per (font, size) pair actually used. Each atlas is generated
+// at the pixel size the text really occupies on screen (draw size x uiScale),
+// so glyphs are never stretched from a smaller or larger atlas.
+struct FontAtlas {
+    Font font;
+    int choiceIndex;
+    int pixelSize;
+};
+
+std::vector<FontAtlas> fontAtlases;
+
+// Set when the font or the display scale changes; the atlases are freed at the
+// top of the next frame rather than in the middle of drawing.
+bool fontAtlasesStale = false;
+
+void UnloadFontAtlases()
 {
-    if (fontChoiceIndex > 0 && fontChoiceIndex < (int)fontChoices.size()) {
-        FontChoice& choice = fontChoices[fontChoiceIndex];
+    Font builtIn = GetFontDefault();
 
-        if (!choice.loaded) {
-            choice.font = LoadFontEx(
-                choice.path.c_str(),
-                FONT_BASE_SIZE,
-                nullptr,
-                0
-            );
-
-            if (choice.font.texture.id == 0) {
-                choice.font = GetFontDefault();
-            } else {
-                SetTextureFilter(
-                    choice.font.texture,
-                    TEXTURE_FILTER_BILINEAR
-                );
-            }
-
-            choice.loaded = true;
+    for (FontAtlas& atlas : fontAtlases) {
+        if (atlas.font.texture.id != builtIn.texture.id) {
+            UnloadFont(atlas.font);
         }
-
-        return choice.font;
     }
 
-    return GetFontDefault();
+    fontAtlases.clear();
+}
+
+// Pixel height the atlas needs to hold text drawn at `drawSize` logical pixels
+int AtlasPixelSize(int drawSize)
+{
+    float needed = drawSize * uiScale;
+
+    return (int)std::max(8.0f, std::min(std::ceil(needed), 256.0f));
+}
+
+// Glyph atlas for the selected font at the size the text is drawn at
+Font UIFontForSize(int drawSize)
+{
+    if (fontChoiceIndex <= 0 ||
+        fontChoiceIndex >= (int)fontChoices.size() ||
+        fontChoices[fontChoiceIndex].path.empty()) {
+        return GetFontDefault();
+    }
+
+    int pixelSize = AtlasPixelSize(drawSize);
+
+    for (const FontAtlas& atlas : fontAtlases) {
+        if (atlas.choiceIndex == fontChoiceIndex &&
+            atlas.pixelSize == pixelSize) {
+            return atlas.font;
+        }
+    }
+
+    FontAtlas atlas;
+    atlas.choiceIndex = fontChoiceIndex;
+    atlas.pixelSize = pixelSize;
+    atlas.font = LoadFontEx(
+        fontChoices[fontChoiceIndex].path.c_str(),
+        pixelSize,
+        nullptr,
+        0
+    );
+
+    if (atlas.font.texture.id == 0) {
+        return GetFontDefault();
+    }
+
+    SetTextureFilter(atlas.font.texture, TEXTURE_FILTER_BILINEAR);
+    fontAtlases.push_back(atlas);
+
+    return atlas.font;
+}
+
+// Text is drawn at whole pixel sizes so measuring and drawing agree exactly
+int UIFontSize(float fontSize)
+{
+    return (int)std::max(6.0f, std::min(std::floor(fontSize + 0.5f), 96.0f));
 }
 
 Vector2 UIMeasureText(const char* text, float fontSize)
 {
+    int size = UIFontSize(fontSize);
+
     return MeasureTextEx(
-        UIFont(),
+        UIFontForSize(size),
         text,
-        fontSize,
-        fontSize / 10.0f
+        (float)size,
+        size / 10.0f
     );
 }
 
@@ -1014,12 +1075,14 @@ void UIDrawText(
     Color color
 )
 {
+    int size = UIFontSize(fontSize);
+
     DrawTextEx(
-        UIFont(),
+        UIFontForSize(size),
         text,
         { x, y },
-        fontSize,
-        fontSize / 10.0f,
+        (float)size,
+        size / 10.0f,
         color
     );
 }
@@ -1084,9 +1147,6 @@ std::string UIFitLabel(
 GameScreen screen = MENU;
 
 bool fullscreen = false;
-float uiScale = 1.0f;
-float uiOffsetX = 0.0f;
-float uiOffsetY = 0.0f;
 
 // Quiz settings chosen on the menu
 bool shuffleQuestions = true;
@@ -1384,10 +1444,12 @@ void DrawMenu()
 
     if (Button("<", { 463, row4, 36, 42 }, BLUE)) {
         fontChoiceIndex = (fontChoiceIndex + fontCount - 1) % fontCount;
+        fontAtlasesStale = true;
     }
 
     if (Button(">", { 675, row4, 36, 42 }, BLUE)) {
         fontChoiceIndex = (fontChoiceIndex + 1) % fontCount;
+        fontAtlasesStale = true;
     }
 
     std::string fontName = UIFitLabel(
@@ -1669,6 +1731,11 @@ int main()
         float deltaTime = GetFrameTime();
         UpdateMusicStream(backgroundMusic);
 
+        if (fontAtlasesStale) {
+            UnloadFontAtlases();
+            fontAtlasesStale = false;
+        }
+
         if (IsKeyPressed(KEY_F11)) {
             fullscreen = !fullscreen;
             ToggleFullscreen();
@@ -1679,6 +1746,23 @@ int main()
             (float)GetScreenHeight() / SCREEN_HEIGHT
         );
 
+        if (std::fabs(scale - uiScale) > 0.001f) {
+            // The canvas is rendered at the size it is shown at, so text and
+            // shapes are produced at real screen resolution instead of being
+            // stretched from a smaller image (which blurred everything, most
+            // visibly in fullscreen). The cached glyph atlases are sized for
+            // the old scale, so they go with it.
+            fontAtlasesStale = false;
+            UnloadFontAtlases();
+
+            UnloadRenderTexture(target);
+
+            target = LoadRenderTexture(
+                (int)std::ceil(SCREEN_WIDTH * scale),
+                (int)std::ceil(SCREEN_HEIGHT * scale)
+            );
+        }
+
         uiScale = scale;
         uiOffsetX =
             ((float)GetScreenWidth() -
@@ -1686,6 +1770,15 @@ int main()
         uiOffsetY =
             ((float)GetScreenHeight() -
              SCREEN_HEIGHT * scale) / 2.0f;
+
+        // Drawing stays in 900x620 layout units; the camera scales it up to
+        // the render target's resolution.
+        Camera2D uiCamera = {
+            { 0.0f, 0.0f },
+            { 0.0f, 0.0f },
+            0.0f,
+            uiScale
+        };
 
         if (screen == PLAYING) {
             if (feedbackActive) {
@@ -1726,6 +1819,7 @@ int main()
 
         BeginTextureMode(target);
         ClearBackground(BACKGROUND);
+        BeginMode2D(uiCamera);
 
         switch (screen) {
             case MENU:
@@ -1741,6 +1835,7 @@ int main()
                 break;
         }
 
+        EndMode2D();
         EndTextureMode();
 
         BeginDrawing();
@@ -1753,11 +1848,13 @@ int main()
             -(float)target.texture.height
         };
 
+        // Shown at its own resolution, on whole pixel positions, so the copy
+        // stays a 1:1 pixel match instead of a resampled one.
         Rectangle dest = {
-            uiOffsetX,
-            uiOffsetY,
-            SCREEN_WIDTH * scale,
-            SCREEN_HEIGHT * scale
+            std::floor(uiOffsetX + 0.5f),
+            std::floor(uiOffsetY + 0.5f),
+            (float)target.texture.width,
+            (float)target.texture.height
         };
 
         DrawTexturePro(
@@ -1776,14 +1873,7 @@ int main()
     UnloadSounds();
     UnloadMusicStream(backgroundMusic);
 
-    Font defaultFont = GetFontDefault();
-
-    for (FontChoice& choice : fontChoices) {
-        if (choice.loaded &&
-            choice.font.texture.id != defaultFont.texture.id) {
-            UnloadFont(choice.font);
-        }
-    }
+    UnloadFontAtlases();
 
     CloseAudioDevice();
     CloseWindow();

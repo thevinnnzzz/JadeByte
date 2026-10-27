@@ -6,3 +6,6 @@ CodeQuest.exe
 *.a
 .vscode/
 .idea/
+
+# scratch used to generate the app icon
+build_check/
