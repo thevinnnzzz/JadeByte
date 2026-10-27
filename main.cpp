@@ -1,6 +1,5 @@
 
 #include "raylib.h"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -49,8 +48,14 @@ Sound yameteSound = {};
 Sound moanSound = {};
 Sound akosidogie_incorrectSound = {};
 Sound akosidogie_correctSound = {};
+Sound akosidogie_passedSound = {};
+Sound akosidogie_failedSound = {};
 Sound malupiton_incorrectSound = {};
 Sound malupiton_correctSound = {};
+Sound malupiton_passedSound = {};
+Sound malupiton_failedSound = {};
+Sound ph_passedSound = {};
+Sound ph_failedSound = {};
 Sound tickSound = {};
 Sound finishSound = {};
 
@@ -425,17 +430,17 @@ void DiscoverMusic()
         std::sort(paths.begin(), paths.end());
 
         for (const std::string& path : paths) {
-            // Skip the two files that back the built-in akosidogie track so the
-            // same audio does not appear twice (once as the stream, once as a
-            // discovered file).
-            if (path == "dogie.wav" ||
-                path == "an-lala-dogie.wav" ||
-                path == "shet.wav" ||
-                path == "malupiton.wav" ||
-                path == "malupiton-aray-ko.wav" ||
-                path == "malupiton-burger-ka-sakin.wav") {
-                continue;
-            }
+    // Skip the files that back the built-in akosidogie and malupiton tracks
+    // so the same audio does not appear twice (once as the stream, once as a
+    // discovered file).
+    if (path == "dogie.wav" ||
+        path == "an-lala-dogie.wav" ||
+        path == "shet.wav" ||
+        path == "malupiton.wav" ||
+        path == "malupiton-aray-ko.wav" ||
+        path == "malupiton-burger-ka-sakin.wav") {
+        continue;
+    }
 
             AddMusicTrack(
                 GetFileNameWithoutExt(path.c_str()),
@@ -516,9 +521,21 @@ void InitSounds()
 
     akosidogie_correctSound = LoadSound("shet.wav");
 
+    akosidogie_passedSound = LoadSound("dogie-passed.wav");
+
+    akosidogie_failedSound = LoadSound("dogie-failed.wav");
+
     malupiton_incorrectSound = LoadSound("malupiton-aray-ko.wav");
 
     malupiton_correctSound = LoadSound("malupiton-burger-ka-sakin.wav");
+
+    malupiton_passedSound = LoadSound("malupiton-passed.wav");
+
+    malupiton_failedSound = LoadSound("malupiton-failed.wav");
+
+    ph_passedSound = LoadSound("ph-passed.wav");
+
+    ph_failedSound = LoadSound("ph-failed.wav");
 
     tickSound = CreateSoundFromSamples(
         GenerateTone(1100.0f, 1100.0f, 0.06f, 0.25f)
@@ -543,8 +560,14 @@ void UnloadSounds()
     UnloadSound(finishSound);
     UnloadSound(akosidogie_incorrectSound);
     UnloadSound(akosidogie_correctSound);
+    UnloadSound(akosidogie_passedSound);
+    UnloadSound(akosidogie_failedSound);
     UnloadSound(malupiton_incorrectSound);
     UnloadSound(malupiton_correctSound);
+    UnloadSound(malupiton_passedSound);
+    UnloadSound(malupiton_failedSound);
+    UnloadSound(ph_passedSound);
+    UnloadSound(ph_failedSound);
 }
 
 std::vector<Question> questions = {
@@ -1422,6 +1445,7 @@ int lastTickSecond = -1;
 bool pauseModalOpen = false;
 bool pauseModalResuming = false;
 
+
 int ClampInt(int value, int low, int high)
 {
     return std::max(low, std::min(value, high));
@@ -1590,6 +1614,72 @@ int DrawStepper(
     return change;
 }
 
+// Which music theme is currently selected. The built-in malupiton track is
+// identified either by its style or by its stream path, so the answer sounds
+// and the end-of-quiz pass/fail sound keep working after a music reload.
+bool IsMalupitonThemeSelected()
+{
+    if (musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size()) {
+        const MusicTrack& track = musicTracks[musicChoiceIndex];
+
+        if (track.style == MUSIC_STYLE_MALUPITON) {
+            return true;
+        }
+
+        if (track.path.find("malupiton") != std::string::npos) {
+            return true;
+        }
+    }
+
+    return !musicChoicePath.empty() &&
+        musicChoicePath.find("malupiton") != std::string::npos;
+}
+
+// The akosidogie theme is the built-in track streamed from dogie.wav. It is
+// matched by style or path so the answer sounds and the end-of-quiz pass/fail
+// sound stay correct after a music reload.
+bool IsAkosidogieThemeSelected()
+{
+    if (musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size()) {
+        const MusicTrack& track = musicTracks[musicChoiceIndex];
+
+        if (track.style == MUSIC_STYLE_AKOSIDOGIE) {
+            return true;
+        }
+
+        if (track.path == "dogie.wav") {
+            return true;
+        }
+    }
+
+    return !musicChoicePath.empty() &&
+        (musicChoicePath.find("dogie") != std::string::npos ||
+         musicChoicePath.find("akosidogie") != std::string::npos);
+}
+
+// The ph_music theme is the file the player drops into the music folder, so it
+// has no built-in style. It is matched on the selected track's path as well as
+// on the path saved when the choice was changed, which keeps it correct after
+// the music stream is reloaded.
+bool IsPhMusicThemeSelected()
+{
+    if (musicChoiceIndex >= 0 &&
+        musicChoiceIndex < (int)musicTracks.size()) {
+        const std::string& path = musicTracks[musicChoiceIndex].path;
+
+        if (path.find("ph_music") != std::string::npos ||
+            path.find("ph_background") != std::string::npos) {
+            return true;
+        }
+    }
+
+    return !musicChoicePath.empty() &&
+        (musicChoicePath.find("ph_music") != std::string::npos ||
+         musicChoicePath.find("ph_background") != std::string::npos);
+}
+
 void SubmitAnswer(int answer)
 {
     if (feedbackActive || screen != PLAYING) {
@@ -1620,26 +1710,11 @@ void SubmitAnswer(int answer)
         musicTracks[musicChoiceIndex].path.empty() &&
         musicTracks[musicChoiceIndex].style == MUSIC_STYLE_ARCADE;
 
-    bool isPhMusic = !musicChoicePath.empty() &&
-        (musicChoicePath.find("ph_music") != std::string::npos ||
-         musicChoicePath.find("ph_background") != std::string::npos);
+    bool isPhMusic = IsPhMusicThemeSelected();
 
-    bool isAkosidogie = musicChoiceIndex >= 0 &&
-        musicChoiceIndex < (int)musicTracks.size() &&
-        musicTracks[musicChoiceIndex].path == "dogie.wav";
+    bool isAkosidogieTrack = IsAkosidogieThemeSelected();
 
-    bool isAkosidogieFile = !musicChoicePath.empty() &&
-        (musicChoicePath.find("dogie") != std::string::npos ||
-         musicChoicePath.find("akosidogie") != std::string::npos);    bool isAkosidogieTrack = isAkosidogie || isAkosidogieFile;
-
-    bool isMalupiton = musicChoiceIndex >= 0 &&
-        musicChoiceIndex < (int)musicTracks.size() &&
-        musicTracks[musicChoiceIndex].path == "malupiton.wav";
-
-    bool isMalupitonFile = !musicChoicePath.empty() &&
-        (musicChoicePath.find("malupiton") != std::string::npos);
-
-    bool isMalupitonTrack = isMalupiton || isMalupitonFile;
+    bool isMalupitonTrack = IsMalupitonThemeSelected();
 
     if (answeredCorrectly) {
         if (isAkosidogieTrack) {
@@ -1664,6 +1739,15 @@ void SubmitAnswer(int answer)
             PlaySound(malupiton_incorrectSound);
         }
     }
+}
+
+bool IsQuizScorePassed()
+{
+    if (quizLength <= 0) {
+        return false;
+    }
+
+    return (100.0f * correctCount / quizLength) >= 70.0f;
 }
 
 // One settings row: a label, the current choice, and < > buttons to cycle it.
@@ -2209,7 +2293,31 @@ int main()
 
                     if (questionIndex >= quizLength) {
                         screen = RESULTS;
-                        PlaySound(finishSound);
+
+                        // Themes can close the quiz with their own pass
+                        // (70% or more) or fail sound instead of the default
+                        // finish jingle. correctCount is final here.
+                        if (IsMalupitonThemeSelected()) {
+                            if (IsQuizScorePassed()) {
+                                PlaySound(malupiton_passedSound);
+                            } else {
+                                PlaySound(malupiton_failedSound);
+                            }
+                        } else if (IsAkosidogieThemeSelected()) {
+                            if (IsQuizScorePassed()) {
+                                PlaySound(akosidogie_passedSound);
+                            } else {
+                                PlaySound(akosidogie_failedSound);
+                            }
+                        } else if (IsPhMusicThemeSelected()) {
+                            if (IsQuizScorePassed()) {
+                                PlaySound(ph_passedSound);
+                            } else {
+                                PlaySound(ph_failedSound);
+                            }
+                        } else {
+                            PlaySound(finishSound);
+                        }
                     } else {
                         timeLeft = questionTime;
                         selectedAnswer = -1;
